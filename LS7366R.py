@@ -2,8 +2,8 @@
 
 #Python library to interface with the chip LS7366R for the Raspberry Pi
 #Written by Federico Bolanos
-#Last Edit: February 8th 2016
-#Reason: Refactoring some names
+#Last Edit: May 12th 2020
+#Reason: Updating to python3... better late than never eh?
 
 import spidev
 from time import sleep
@@ -56,8 +56,8 @@ class LS7366R():
         self.spi.max_speed_hz = CLK #Speed of clk (modifies speed transaction) 
 
         #Init the Encoder
-        print 'Clearing Encoder CS%s\'s Count...\t' % (str(CSX)), self.clearCounter()
-        print 'Clearing Encoder CS%s\'s Status..\t' % (str(CSX)), self.clearStatus()
+        print('Clearing Encoder CS{}\'s Count...\t{}'.format(CSX, self.clearCounter()))
+        print('Clearing Encoder CS{}\'s Status..\t{}'.format(CSX, self.clearStatus))
 
         self.spi.xfer2([self.WRITE_MODE0, self.FOURX_COUNT])
         
@@ -66,7 +66,7 @@ class LS7366R():
         self.spi.xfer2([self.WRITE_MODE1, self.BYTE_MODE[self.counterSize-1]])
 
     def close(self):
-        print '\nThanks for using me! :)'
+        print('\nClosing SPI port')
         self.spi.close()
 
     def clearCounter(self):
@@ -108,11 +108,11 @@ if __name__ == "__main__":
     encoder = LS7366R(0, 1000000, 4)
     try:
         while True:
-            print "Encoder count: ", encoder.readCounter(), " Press CTRL-C to terminate test program."
+            print("Encoder count: ", encoder.readCounter(), " Press CTRL-C to terminate test program.", flush=True)
             sleep(0.2)
     except KeyboardInterrupt:
         encoder.close()
-        print "All done, bye bois."
+        print("Test programming ending.")
 
     
         
