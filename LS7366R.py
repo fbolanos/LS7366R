@@ -2,17 +2,21 @@
 
 #Python library to interface with the chip LS7366R for the Raspberry Pi
 #Written by Federico Bolanos
-#Last Edit: May 12th 2020
-#Reason: Updating to python3... better late than never eh?
+#Source: https://github.com/fbolanos/LS7366R
+#Last Edit: February 8th 2016
+#Reason: Refactoring some names
+#Update: November 4th 2017 by Thilo Brueckner & Sirius3 from 
+#Forum: https://www.python-forum.de/viewtopic.php?f=31&t=41495#p316868
 
+import struct
 import spidev
 from time import sleep
 
 
-# Usage: import LS7366R then create an object by calling enc = LS7366R(CSX, CLK, BTMD)
-# CSX is either CE0 or CE1, CLK is the speed, BTMD is the bytemode 1-4 the resolution of your counter.
-# example: lever.Encoder(0, 1000000, 4)
-# These are the values I normally use.
+# Usage: import LS7366R then create an object by calling
+# enc = LS7366R(cs_line, max_speed_hz, byte_mode)
+# cs_line is either CE0 or CE1, max_speed_hz is the speed,
+# byte_mode is the bytemode 1-4 the resolution of your counter.
 
 class LS7366R():
 
@@ -21,98 +25,84 @@ class LS7366R():
 
     #   Commands
     CLEAR_COUNTER = 0x20
-    CLEAR_STATUS = 0x30
-    READ_COUNTER = 0x60
-    READ_STATUS = 0x70
-    WRITE_MODE0 = 0x88
-    WRITE_MODE1 = 0x90
+    CLEAR_STATUS  = 0x30
+    READ_COUNTER  = 0x60
+    READ_STATUS   = 0x70
+    WRITE_DTR     = 0x98
+    LOAD_COUNTER  = 0xE0
+    LOAD_OTR      = 0xE4
+    WRITE_MODE0   = 0x88
+    WRITE_MODE1   = 0x90
 
-    #   Modes
-    FOURX_COUNT = 0x03
+    #   Count Operating Modes
+    #   0x00: non-quadrature count mode. (A = clock, B = direction).
+    #   0x01: x1 quadrature count mode (one count per quadrature cycle).
+    #   0x02: x2 quadrature count mode (two counts per quadrature cycle).
+    #   0x03: x4 quadrature count mode (four counts per quadrature cycle).
+    FOURX_COUNT = 0x01
 
-    FOURBYTE_COUNTER = 0x00
-    THREEBYTE_COUNTER = 0x01
-    TWOBYTE_COUNTER = 0x02
-    ONEBYTE_COUNTER = 0x03
+    #   Count Byte Modes
+    FOURBYTE_COUNTER  = 0x00	# counts from 0 to 4,294,967,295
+    THREEBYTE_COUNTER = 0x01	# counts from 0 to    16,777,215
+    TWOBYTE_COUNTER   = 0x02	# counts from 0 to        65,535
+    ONEBYTE_COUNTER   = 0x03	# counts from 0 to           255
+
+    #   Enable/disable counter
+    EN_CNTR  = 0x00  # counting enabled
+    DIS_CNTR = 0x04  # counting disabled
 
     BYTE_MODE = [ONEBYTE_COUNTER, TWOBYTE_COUNTER, THREEBYTE_COUNTER, FOURBYTE_COUNTER]
 
-    #   Values
-    max_val = 4294967295
-    
-    # Global Variables
-
-    counterSize = 4 #Default 4
-    
     #----------------------------------------------
     # Constructor
 
-    def __init__(self, CSX, CLK, BTMD):
-        self.counterSize = BTMD #Sets the byte mode that will be used
+    def __init__(self, cs_line, max_speed_hz, byte_mode):
+        self.byte_mode = byte_mode
 
-
-        self.spi = spidev.SpiDev() #Initialize object
-        self.spi.open(0, CSX) #Which CS line will be used
-        self.spi.max_speed_hz = CLK #Speed of clk (modifies speed transaction) 
+        self.spi = spidev.SpiDev()
+        self.spi.open(0, cs_line) # Which CS line will be used
+        self.spi.max_speed_hz = max_speed_hz #Speed of clk (modifies speed transaction)
 
         #Init the Encoder
-        print('Clearing Encoder CS{}\'s Count...\t{}'.format(CSX, self.clearCounter()))
-        print('Clearing Encoder CS{}\'s Status..\t{}'.format(CSX, self.clearStatus))
-
+        self.clear_counter()
+        self.clear_status()
         self.spi.xfer2([self.WRITE_MODE0, self.FOURX_COUNT])
-        
         sleep(.1) #Rest
-        
-        self.spi.xfer2([self.WRITE_MODE1, self.BYTE_MODE[self.counterSize-1]])
+        self.spi.xfer2([self.WRITE_MODE1, self.BYTE_MODE[self.byte_mode-1]])
 
     def close(self):
-        print('\nClosing SPI port')
         self.spi.close()
 
-    def clearCounter(self):
+    def clear_counter(self):
         self.spi.xfer2([self.CLEAR_COUNTER])
 
-        return '[DONE]'
-
-    def clearStatus(self):
+    def clear_status(self):
         self.spi.xfer2([self.CLEAR_STATUS])
 
-        return '[DONE]'
+    def load_counter(self, enc_val):
+        data = struct.pack(">I", enc_val)[-self.byte_mode:]
+        self.spi.xfer2([self.WRITE_DTR] + list(ord(k) for k in data))
+        self.spi.xfer2([self.LOAD_COUNTER])
 
-    def readCounter(self):
-        readTransaction = [self.READ_COUNTER]
+    def read_counter(self):
+        data = [self.READ_COUNTER] + [0] * self.byte_mode
+        data = self.spi.xfer2(data)
+        return reduce(lambda a,b: (a<<8) + b, data[1:], 0)
 
-        for i in range(self.counterSize):
-            readTransaction.append(0)
-            
-        data = self.spi.xfer2(readTransaction)
-
-        EncoderCount = 0
-        for i in range(self.counterSize):
-            EncoderCount = (EncoderCount << 8) + data[i+1]
-
-        if data[1] != 255:    
-            return EncoderCount
-        else:
-            return (EncoderCount - (self.max_val+1))  
-        
-    def readStatus(self):
+    def read_status(self):
         data = self.spi.xfer2([self.READ_STATUS, 0xFF])
-        
         return data[1]
 
 
 if __name__ == "__main__":
     from time import sleep
-    
+
     encoder = LS7366R(0, 1000000, 4)
     try:
         while True:
-            print("Encoder count: ", encoder.readCounter(), " Press CTRL-C to terminate test program.", flush=True)
+	    sys.stdout.write('\rEncoder count: %11i CTRL+C for exit' % encoder.read_counter(),)
+	    sys.stdout.flush()
             sleep(0.2)
     except KeyboardInterrupt:
         encoder.close()
-        print("Test programming ending.")
-
-    
-        
+        print "All done, bye bye."
